@@ -126,9 +126,24 @@ Notary v2 requires the signature envelope to support the following signed attrib
 
 #### Standard attributes
 
-- **Signing time**: A REQUIRED claim that indicates the time at which the signature was generated. Though this claim is signed by the signing key, it’s considered unauthenticated as a signer can modify local time and manipulate this claim. More details [here](#signing-time).
+- **Signing Scheme** (critical): A REQUIRED claim that defines the [Notary v2 Signing Scheme](./signing-scheme.md) used by the signature. This attribute dictates the rest of signature schema - the set of signed and unsigned attributes to be included in the signature. Supported values are `notary.default.x509` and `notary.signingAuthority.x509`.
+- **Signing Time**: A claim that indicates the time at which the signature was generated. Though this claim is signed by the signing key, it’s considered unauthenticated as a signer can modify local time and manipulate this claim. More details [here](#signing-time). This claim is REQUIRED and only valid when signing scheme is `notary.default.x509` .
+- **Authentic Signing Time** (critical): The authenticated time at which the signature was generated. This claim is REQUIRED and only valid when signing scheme is `notary.signingAuthority.x509` . More details [here](#signing-time).
 - **Expiry** (critical): An OPTIONAL claim that provides a “best by use” time for the artifact, as defined by the signer. More details [here](#expiry).
-- **Content type** (critical): A REQUIRED claim that indicates the content type of the [payload](#payload). The supported value is `application/vnd.cncf.notary.payload.v1+json`. Other payload types MAY be supported in future.
+- **Content Type** (critical): A REQUIRED claim that indicates the content type of the [payload](#payload). The supported value is `application/vnd.cncf.notary.payload.v1+json`. Other payload types MAY be supported in future.
+
+#### Extended attributes
+
+Implementations of Notary v2 signature spec MAY include additional signed attributes in the signature envelope. These attributes MAY be marked critical, i.e. the attribute MUST be understood and processed by a verifier, unknown critical attributes MUST cause signature verification to fail.
+
+#### Extended attributes for *Notation* Plugins
+
+This section documents extended attributes used by Notary v2 reference implementation *Notation* to support plugins. Plugins is a *Notation* concept that allows parts of signing and verification logic to be performed by an external provider. *Signing plugins* allow *Notation* to be extended for integration with remote keys remote key management services and signing services, where as *verification plugins* allow for customization of verification logic. Detailed specification for plugins can be found [here](https://github.com/notaryproject/notaryproject/blob/main/specs/plugin-extensibility.md#notation-extensibility-for-signing-and-verification). These extended attributes are documented in this spec, as other Notary V2 implementations may encounter these attributes if they verify a signature that indicated it required a verification plugin for complete signature verification.
+
+- **Verification Plugin** (critical): An OPTIONAL attribute that specifies the name of the verification plugin that MAY be used to verify the signature e.g. “com.example.nv2plugin”. [Notation plugin](https://github.com/notaryproject/notaryproject/blob/main/specs/plugin-extensibility.md#plugin-contract) aware implementations use this attribute to load and execute a *Notation* compliant plugin. The plugin participates in the overall signature verification workflow and performs specific steps in it.
+- **Verification Plugin Minimum Version** (critical): An OPTIONAL attribute that specifies the minimum version of the verification plugin that MUST be used to verify the signature. A Notation plugin aware implementations MUST use this attribute to verify the signature with a plugin with matching or higher plugin version. The plugin MUST use [Semantic Versioning](https://semver.org/) (SemVer) to use this feature i.e the `get-plugin-metadata` plugin command MUST return a SemVer compliant version in the response. A use case for this feature is for a plugin publisher to address security bug in older plugin version, by setting the minimum version to the plugin version with fixes.
+
+See [Guidelines for Notary v2 implementors](#guidelines-for-notary-v2-implementors) for options to handle these attributes during signature verification.
 
 ### Unsigned Attributes
 
@@ -224,6 +239,16 @@ The signing time denotes the time at which the signature was generated. A X509 c
 ### Expiry
 
 This is an optional feature that provides a “best by use” time for the artifact, as defined by the signer. Notary v2 allows users to include an optional expiry time when they generate a signature. The expiry time is not set by default and requires explicit configuration by users at the time of signature generation. The artifact is considered expired when the current time is greater than or equal to expiry time, users performing verification can either configure their trust policies to fail the verification or even accept the artifact with expiry date in the past using policy. This is an advanced feature that allows implementing controls for user defined semantics like deprecation for older artifacts, or block older artifacts in a production environment. Users should only include an expiry time in the signed artifact after considering the behavior they expect for consumers of the artifact after it expires. Users can choose to consume an artifact even after the expiry time based on their specific needs.
+
+### Guidelines for Notary v2 implementors
+
+Implementations of Notary v2, can choose to be [Notation plugin protocol](./specs/plugin-extensibility.md#plugin-contract) aware or not. If an implementation chooses to be plugin protocol aware, and it encounters the Verification Plugin and Verification Plugin minimum version attributes during signature verification, it MUST process these attributes. This involves finding the appropriate plugin and the version to use, and executing `verify-signature` plugin command with correct inputs and processing the plugin response, as per the [Verification Plugin interface](../specs/../notaryproject-specs/specs/plugin-extensibility.md#verification-extensibility).
+
+Alternatively, an implementation of Notary v2 can choose not to implement plugin protocol.
+
+- The implementation MUST itself perform equivalent verification logic that is usually performed by plugin specified in the signature.
+- An implementation MUST fail signature verification if it cannot perform the equivalent verification logic, as skipping the plugin equivalent verification logic will cause incorrect and inconsistent signature verification behavior.
+- An implementation MAY choose to support a set of known plugin’s verification logic and fail others.
 
 [annotation-rules]: https://github.com/opencontainers/image-spec/blob/main/annotations.md#rules
 [oci-descriptor]: https://github.com/opencontainers/image-spec/blob/main/descriptor.md
